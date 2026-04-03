@@ -1,0 +1,10 @@
+[project]
+name = "test-crewai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "crewai-tools>=1.10.1",
+    "crewai[google-genai]>=1.10.1",
+]

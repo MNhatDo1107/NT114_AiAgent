@@ -1,0 +1,44 @@
+# tasks.yaml
+cv_task:
+  description: "Phân tích CV: {{cv_text}}. Trích xuất Kỹ năng, Kinh nghiệm, Dự án, Học vấn."
+  expected_output: "JSON chứa thông tin CV gọn nhẹ."
+
+jd_task:
+  description: "Phân tích JD: {{jd_text}}. Trích xuất Yêu cầu bắt buộc, ưu tiên, kinh nghiệm."
+  expected_output: "JSON chứa thông tin JD gọn nhẹ."
+
+match_task:
+  description: >
+    Dựa trên kết quả phân tích CV và JD ở trên:
+
+    - Tính % độ phù hợp (0-100)
+    - Liệt kê kỹ năng khớp
+    - Liệt kê kỹ năng thiếu
+  expected_output: "Kết quả so khớp"
+
+gap_task:
+  description: >
+    Dựa trên kết quả so khớp:
+
+    - Xác định kỹ năng còn thiếu
+    - Điểm yếu
+    - Gợi ý cải thiện
+  expected_output: "Phân tích thiếu sót"
+
+review_task:
+  description: >
+    Dựa trên toàn bộ phân tích trước đó, hãy trả về JSON DUY NHẤT theo format:
+
+    {
+      "matchScore": number (0-100),
+      "cvFeedback": "string",
+      "matchedKeywords": ["string"],
+      "missingKeywords": ["string"],
+      "aiTips": "string"
+    }
+
+    Yêu cầu:
+    - Chỉ trả JSON, không thêm text ngoài
+    - matchScore phải là số
+    - matchedKeywords và missingKeywords là array
+  expected_output: "JSON chuẩn cho backend"

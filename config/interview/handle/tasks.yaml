@@ -1,0 +1,73 @@
+analyze_cv:
+  description: >
+    Phân tích CV sau đây và trích xuất thông tin quan trọng:
+
+    --- CV ---
+    {cv_text}
+    ---------
+
+    Hãy xác định:
+    1. Các kỹ năng kỹ thuật chính (ngôn ngữ lập trình, framework, công cụ)
+    2. Kinh nghiệm làm việc nổi bật (dự án, vai trò, thành tích)
+    3. Khoảng trống hoặc điểm mờ cần làm rõ
+    4. Điểm mạnh và điểm yếu tiềm ẩn của ứng viên
+
+    Trả về phân tích chi tiết bằng tiếng Việt.
+  expected_output: >
+    Báo cáo phân tích CV chi tiết gồm: kỹ năng kỹ thuật,
+    kinh nghiệm nổi bật, điểm cần làm rõ, điểm mạnh và yếu.
+  agent: cv_analyst
+
+analyze_jd:
+  description: >
+    Phân tích Job Description sau đây:
+
+    --- JD ---
+    {jd_text}
+    ----------
+
+    Hãy xác định:
+    1. Yêu cầu kỹ thuật bắt buộc (must-have) và mong muốn (nice-to-have)
+    2. Kỹ năng mềm và tính cách cần thiết
+    3. Trách nhiệm công việc chính
+    4. Văn hóa công ty và môi trường làm việc (nếu có)
+    5. Tiêu chí đánh giá ứng viên quan trọng nhất
+
+    Trả về phân tích chi tiết bằng tiếng Việt.
+  expected_output: >
+    Báo cáo phân tích JD gồm: yêu cầu kỹ thuật, kỹ năng mềm,
+    trách nhiệm chính, và tiêu chí đánh giá ứng viên.
+  agent: jd_analyst
+
+design_questions:
+  description: >
+    Dựa trên phân tích CV và JD từ các bước trước,
+    hãy thiết kế đúng {num_questions} câu hỏi phỏng vấn.
+
+    Yêu cầu:
+    - Phân bổ: technical (40%), behavioral (30%), experience (20%), situational (10%)
+    - Mỗi câu hỏi phải kèm gợi ý trả lời (hint) cụ thể, thực tế
+    - Sắp xếp từ dễ đến khó để tạo tâm lý thoải mái cho ứng viên
+    - Ưu tiên khai thác điểm mờ trong CV và yêu cầu trọng tâm trong JD
+
+    Trả về KẾT QUẢ CUỐI CÙNG theo định dạng JSON (chỉ JSON, không thêm text):
+    {
+      "questions": [
+        {
+          "order_index": 1,
+          "question_text": "Nội dung câu hỏi",
+          "hint_text": "Gợi ý trả lời cho ứng viên",
+          "category": "technical|behavioral|experience|situational",
+          "difficulty": "easy|medium|hard"
+        }
+      ],
+      "total_questions": {num_questions},
+      "estimated_duration_minutes": <số phút ước tính>
+    }
+  expected_output: >
+    JSON hợp lệ chứa đúng {num_questions} câu hỏi phỏng vấn
+    với đầy đủ order_index, question_text, hint_text, category, difficulty.
+  agent: question_designer
+  context:
+    - analyze_cv
+    - analyze_jd
