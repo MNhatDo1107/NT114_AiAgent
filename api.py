@@ -126,3 +126,59 @@ async def get_analysis_status(analysis_id: str):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+from crew_interview import run_interview_crew, InterviewPlan
+
+class InterviewRequest(BaseModel):
+    cv_text: str
+    jd_text: str
+    num_questions: Optional[int] = 10
+    session_id: Optional[str] = None
+
+class InterviewJobStatus(BaseModel):
+    session_id: str
+    status: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+interview_store: dict = {}
+
+def run_interview_job(session_id: str, cv_text: str, jd_text: str, num_questions: int):
+    try:
+        interview_store[session_id]["status"] = "processing"
+        plan = run_interview_crew(cv_text, jd_text, num_questions)
+        interview_store[session_id] = {
+            "status": "completed",
+            "result": plan.model_dump()
+        }
+    except Exception as e:
+        interview_store[session_id] = {
+            "status": "failed",
+            "error": str(e)
+        }
+
+@app.post("/api/interview", response_model=InterviewJobStatus, status_code=202)
+async def create_interview(request: InterviewRequest):
+    session_id = request.session_id or str(uuid.uuid4())
+    interview_store[session_id] = {"status": "pending"}
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        executor,
+        run_interview_job,
+        session_id,
+        request.cv_text,
+        request.jd_text,
+        request.num_questions
+    )
+    return InterviewJobStatus(session_id=session_id, status="pending")
+
+@app.get("/api/interview/{session_id}/status", response_model=InterviewJobStatus)
+async def get_interview_status(session_id: str):
+    if session_id not in interview_store:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    job = interview_store[session_id]
+    return InterviewJobStatus(
+        session_id=session_id,
+        status=job["status"],
+        result=job.get("result"),
+        error=job.get("error")
+    )
