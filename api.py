@@ -1,4 +1,3 @@
-#api.py
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,6 +8,9 @@ import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from crew_cv import CVMatchingCrew
+from crew_improve import CVImproveCrew
+from crew_jobs import JobMatchCrew
+
 app = FastAPI(title="CV Analysis AI Agent API")
 
 app.add_middleware(
@@ -19,14 +21,33 @@ app.add_middleware(
 )
 
 executor = ThreadPoolExecutor(max_workers=4)
+
+# Dùng chung 1 store cho tất cả jobs
 job_store: dict = {}
-    
+
+
+# ── Helpers ───────────────────────────────────────────────────
+
+def parse_crew_result(raw_output: str) -> dict:
+    try:
+        return json.loads(raw_output)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    match = re.search(r"\{.*\}", raw_output, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    raise ValueError(f"Cannot parse JSON: {raw_output[:200]}")
+
+
+# ── Models ────────────────────────────────────────────────────
 
 class CVAnalysisRequest(BaseModel):
     cv_text: str
     jd_text: str
     analysis_id: Optional[str] = None
-
 
 class CVAnalysisResult(BaseModel):
     analysis_id: str
@@ -36,42 +57,34 @@ class CVAnalysisResult(BaseModel):
     missing_keywords: list[str]
     ai_tips: str
 
-
 class JobStatus(BaseModel):
     analysis_id: str
     status: str
     result: Optional[CVAnalysisResult] = None
     error: Optional[str] = None
 
+class ImproveRequest(BaseModel):
+    cv_text: str
+    position_title: str
+    position_key_skills: str
+    session_id: Optional[str] = None
 
-def parse_crew_result(raw_output: str) -> dict:
-    try:
-        return json.loads(raw_output)
-    except json.JSONDecodeError:
-        pass
+class JobsRequest(BaseModel):
+    cv_text: str
+    positions_list: str
+    session_id: Optional[str] = None
 
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_output, re.DOTALL)
-    if match:
-        return json.loads(match.group(1))
 
-    match = re.search(r"\{.*\}", raw_output, re.DOTALL)
-    if match:
-        return json.loads(match.group(0))
-
-    raise ValueError(f"Cannot parse JSON from CrewAI output: {raw_output[:200]}")
-
+# ── CV Analysis ───────────────────────────────────────────────
 
 def run_crew_analysis(analysis_id: str, cv_text: str, jd_text: str):
     try:
         job_store[analysis_id]["status"] = "processing"
-
         crew_instance = CVMatchingCrew()
         result = crew_instance.crew().kickoff(
             inputs={"cv_text": cv_text, "jd_text": jd_text}
         )
-
         parsed = parse_crew_result(result.raw)
-
         job_store[analysis_id] = {
             "status": "completed",
             "result": {
@@ -84,101 +97,81 @@ def run_crew_analysis(analysis_id: str, cv_text: str, jd_text: str):
             }
         }
     except Exception as e:
-        job_store[analysis_id] = {
-            "status": "failed",
-            "error": str(e)
-        }
-
+        job_store[analysis_id] = {"status": "failed", "error": str(e)}
 
 @app.post("/api/analyze", response_model=JobStatus, status_code=202)
 async def analyze_cv(request: CVAnalysisRequest, background_tasks: BackgroundTasks):
     analysis_id = request.analysis_id or str(uuid.uuid4())
     job_store[analysis_id] = {"status": "pending"}
-
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(
-        executor,
-        run_crew_analysis,
-        analysis_id,
-        request.cv_text,
-        request.jd_text
-    )
-
+    loop.run_in_executor(executor, run_crew_analysis, analysis_id, request.cv_text, request.jd_text)
     return JobStatus(analysis_id=analysis_id, status="pending")
-
 
 @app.get("/api/analyze/{analysis_id}/status", response_model=JobStatus)
 async def get_analysis_status(analysis_id: str):
     if analysis_id not in job_store:
         raise HTTPException(status_code=404, detail="Analysis job not found")
-
     job = job_store[analysis_id]
     result = CVAnalysisResult(**job["result"]) if job.get("result") else None
-
-    return JobStatus(
-        analysis_id=analysis_id,
-        status=job["status"],
-        result=result,
-        error=job.get("error")
-    )
+    return JobStatus(analysis_id=analysis_id, status=job["status"], result=result, error=job.get("error"))
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-from crew_interview import run_interview_crew, InterviewPlan
+# ── Improve CV ────────────────────────────────────────────────
 
-class InterviewRequest(BaseModel):
-    cv_text: str
-    jd_text: str
-    num_questions: Optional[int] = 10
-    session_id: Optional[str] = None
-
-class InterviewJobStatus(BaseModel):
-    session_id: str
-    status: str
-    result: Optional[dict] = None
-    error: Optional[str] = None
-
-interview_store: dict = {}
-
-def run_interview_job(session_id: str, cv_text: str, jd_text: str, num_questions: int):
+def run_improve_job(session_id: str, cv_text: str, position_title: str, position_key_skills: str):
     try:
-        interview_store[session_id]["status"] = "processing"
-        plan = run_interview_crew(cv_text, jd_text, num_questions)
-        interview_store[session_id] = {
-            "status": "completed",
-            "result": plan.model_dump()
-        }
+        job_store[session_id]["status"] = "processing"
+        crew = CVImproveCrew().crew()
+        result = crew.kickoff(inputs={
+            "cv_text": cv_text,
+            "position_title": position_title,
+            "position_key_skills": position_key_skills,
+        })
+        parsed = parse_crew_result(result.raw)
+        job_store[session_id] = {"status": "completed", "result": parsed}
     except Exception as e:
-        interview_store[session_id] = {
-            "status": "failed",
-            "error": str(e)
-        }
+        job_store[session_id] = {"status": "failed", "error": str(e)}
 
-@app.post("/api/interview", response_model=InterviewJobStatus, status_code=202)
-async def create_interview(request: InterviewRequest):
+@app.post("/api/improve/start")
+async def start_improve(request: ImproveRequest, background_tasks: BackgroundTasks):
     session_id = request.session_id or str(uuid.uuid4())
-    interview_store[session_id] = {"status": "pending"}
+    job_store[session_id] = {"status": "pending"}
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(
-        executor,
-        run_interview_job,
-        session_id,
-        request.cv_text,
-        request.jd_text,
-        request.num_questions
-    )
-    return InterviewJobStatus(session_id=session_id, status="pending")
+    loop.run_in_executor(executor, run_improve_job, session_id, request.cv_text, request.position_title, request.position_key_skills)
+    return {"session_id": session_id, "status": "pending"}
 
-@app.get("/api/interview/{session_id}/status", response_model=InterviewJobStatus)
-async def get_interview_status(session_id: str):
-    if session_id not in interview_store:
-        raise HTTPException(status_code=404, detail="Interview session not found")
-    job = interview_store[session_id]
-    return InterviewJobStatus(
-        session_id=session_id,
-        status=job["status"],
-        result=job.get("result"),
-        error=job.get("error")
-    )
+@app.get("/api/improve/{session_id}/status")
+async def improve_status(session_id: str):
+    if session_id not in job_store:
+        raise HTTPException(status_code=404, detail="Improve job not found")
+    return job_store[session_id]
+
+
+# ── Job Matching ──────────────────────────────────────────────
+
+def run_jobs_job(session_id: str, cv_text: str, positions_list: str):
+    try:
+        job_store[session_id]["status"] = "processing"
+        crew = JobMatchCrew().crew()
+        result = crew.kickoff(inputs={
+            "cv_text": cv_text,
+            "positions_list": positions_list,
+        })
+        parsed = parse_crew_result(result.raw)
+        job_store[session_id] = {"status": "completed", "result": parsed}
+    except Exception as e:
+        job_store[session_id] = {"status": "failed", "error": str(e)}
+
+@app.post("/api/jobs/start")
+async def start_jobs(request: JobsRequest, background_tasks: BackgroundTasks):
+    session_id = request.session_id or str(uuid.uuid4())
+    job_store[session_id] = {"status": "pending"}
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(executor, run_jobs_job, session_id, request.cv_text, request.positions_list)
+    return {"session_id": session_id, "status": "pending"}
+
+@app.get("/api/jobs/{session_id}/status")
+async def jobs_status(session_id: str):
+    if session_id not in job_store:
+        raise HTTPException(status_code=404, detail="Jobs job not found")
+    return job_store[session_id]

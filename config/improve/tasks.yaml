@@ -1,0 +1,49 @@
+read_cv_task:
+  description: >
+    Đọc CV sau và trích xuất thông tin kỹ thuật:
+    CV: {{cv_text}}
+
+    Trích xuất:
+    - Kỹ năng kỹ thuật (programming languages, frameworks, tools)
+    - Kinh nghiệm làm việc (vị trí, công ty, thời gian)
+    - Dự án nổi bật
+    - Học vấn và chứng chỉ
+  expected_output: "JSON thông tin CV IT"
+
+analyze_position_task:
+  description: >
+    Phân tích yêu cầu cho vị trí: {{position_title}}
+    Key skills của vị trí: {{position_key_skills}}
+
+    Xác định:
+    - Kỹ năng bắt buộc (must-have)
+    - Kỹ năng ưu tiên (nice-to-have)
+    - Mức kinh nghiệm cần thiết
+    - Dự án/portfolio nên có
+  expected_output: "Yêu cầu vị trí IT chi tiết"
+
+improve_task:
+  description: >
+    Dựa trên CV và yêu cầu vị trí {{position_title}}, hãy trả về JSON DUY NHẤT:
+
+    {
+      "overallScore": number (0-100, điểm CV hiện tại cho vị trí này),
+      "summary": "string (nhận xét tổng thể 2-3 câu)",
+      "improvements": [
+        {
+          "section": "string (Summary/Skills/Experience/Projects/Education)",
+          "issue": "string (vấn đề hiện tại)",
+          "suggestion": "string (gợi ý cụ thể cần làm)",
+          "priority": "high|medium|low"
+        }
+      ],
+      "missingSkills": ["string"],
+      "strongPoints": ["string"],
+      "quickWins": ["string (3 việc làm ngay để tăng điểm nhanh nhất)"]
+    }
+
+    Yêu cầu:
+    - Chỉ trả JSON, không thêm text ngoài
+    - Gợi ý phải cụ thể, thực tế cho IT
+    - Tập trung vào những thay đổi có impact cao nhất
+  expected_output: "JSON gợi ý cải thiện CV IT"
