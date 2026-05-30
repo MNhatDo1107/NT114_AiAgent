@@ -1,49 +1,81 @@
 read_cv_task:
   description: >
-    Đọc CV sau và trích xuất thông tin kỹ thuật:
-    CV: {{cv_text}}
+    Đọc và phân tích CV sau đây, trích xuất thông tin kỹ thuật có cấu trúc:
 
-    Trích xuất:
-    - Kỹ năng kỹ thuật (programming languages, frameworks, tools)
-    - Kinh nghiệm làm việc (vị trí, công ty, thời gian)
-    - Dự án nổi bật
-    - Học vấn và chứng chỉ
-  expected_output: "JSON thông tin CV IT"
+    CV CONTENT:
+    {cv_text}
+
+    Hãy trích xuất và liệt kê rõ ràng:
+    1. Technical skills: ngôn ngữ lập trình, frameworks, tools, cloud platforms
+    2. Kinh nghiệm làm việc: vị trí, công ty, số năm kinh nghiệm
+    3. Dự án nổi bật: tên, công nghệ sử dụng, vai trò
+    4. Học vấn và chứng chỉ IT
+    5. Điểm mạnh kỹ thuật tổng thể
+
+    Nếu CV bị trống hoặc không rõ ràng, hãy ghi rõ "Không có thông tin".
+  expected_output: >
+    Bản phân tích CV có cấu trúc với 5 mục rõ ràng:
+    technical_skills, work_experience, projects, education_certs, strengths
+
+read_cv_task_agent: cv_reader_agent
 
 analyze_position_task:
   description: >
-    Phân tích yêu cầu cho vị trí: {{position_title}}
-    Key skills của vị trí: {{position_key_skills}}
+    Phân tích yêu cầu cho vị trí IT sau:
 
-    Xác định:
-    - Kỹ năng bắt buộc (must-have)
-    - Kỹ năng ưu tiên (nice-to-have)
-    - Mức kinh nghiệm cần thiết
-    - Dự án/portfolio nên có
-  expected_output: "Yêu cầu vị trí IT chi tiết"
+    VỊ TRÍ: {position_title}
+    KEY SKILLS YÊU CẦU: {position_key_skills}
+
+    Hãy xác định rõ:
+    1. Kỹ năng bắt buộc (must-have): không có thì không được nhận
+    2. Kỹ năng ưu tiên (nice-to-have): có thì là lợi thế
+    3. Mức kinh nghiệm phù hợp dựa trên tên vị trí
+    4. Những gì nhà tuyển dụng thường kiểm tra khi phỏng vấn vị trí này
+  expected_output: >
+    Bản phân tích yêu cầu vị trí với must-have skills, nice-to-have skills,
+    experience level và interview focus areas
+
+analyze_position_task_agent: position_analyst_agent
 
 improve_task:
   description: >
-    Dựa trên CV và yêu cầu vị trí {{position_title}}, hãy trả về JSON DUY NHẤT:
+    Dựa trên kết quả phân tích CV và yêu cầu vị trí {position_title},
+    hãy đưa ra đánh giá và gợi ý cải thiện CV.
 
-    {
-      "overallScore": number (0-100, điểm CV hiện tại cho vị trí này),
-      "summary": "string (nhận xét tổng thể 2-3 câu)",
+    KEY SKILLS CỦA VỊ TRÍ: {position_key_skills}
+
+    QUAN TRỌNG: Chỉ trả về JSON hợp lệ, không có text nào khác bên ngoài,
+    không có markdown code block, không có giải thích thêm.
+
+    JSON format bắt buộc:
+    {{
+      "overallScore": <số từ 0-100>,
+      "summary": "<nhận xét tổng thể 2-3 câu bằng tiếng Việt>",
       "improvements": [
-        {
-          "section": "string (Summary/Skills/Experience/Projects/Education)",
-          "issue": "string (vấn đề hiện tại)",
-          "suggestion": "string (gợi ý cụ thể cần làm)",
-          "priority": "high|medium|low"
-        }
+        {{
+          "section": "<Summary|Skills|Experience|Projects|Education>",
+          "issue": "<vấn đề hiện tại>",
+          "suggestion": "<gợi ý cụ thể cần làm>",
+          "priority": "<high|medium|low>"
+        }}
       ],
-      "missingSkills": ["string"],
-      "strongPoints": ["string"],
-      "quickWins": ["string (3 việc làm ngay để tăng điểm nhanh nhất)"]
-    }
+      "missingSkills": ["<skill1>", "<skill2>"],
+      "strongPoints": ["<điểm mạnh 1>", "<điểm mạnh 2>"],
+      "quickWins": [
+        "<việc làm ngay #1 để tăng điểm nhanh nhất>",
+        "<việc làm ngay #2>",
+        "<việc làm ngay #3>"
+      ]
+    }}
 
     Yêu cầu:
-    - Chỉ trả JSON, không thêm text ngoài
-    - Gợi ý phải cụ thể, thực tế cho IT
-    - Tập trung vào những thay đổi có impact cao nhất
-  expected_output: "JSON gợi ý cải thiện CV IT"
+    - overallScore: đánh giá thực tế mức độ phù hợp CV với vị trí (0-100)
+    - improvements: tối đa 5 gợi ý, tập trung vào impact cao nhất
+    - missingSkills: chỉ liệt kê skills thực sự quan trọng còn thiếu
+    - quickWins: đúng 3 việc, cụ thể và có thể làm được trong 1 tuần
+    - Toàn bộ nội dung bằng tiếng Việt
+  expected_output: >
+    JSON hợp lệ với đầy đủ các trường: overallScore, summary,
+    improvements, missingSkills, strongPoints, quickWins
+
+improve_task_agent: improve_agent

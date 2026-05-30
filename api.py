@@ -21,12 +21,10 @@ app.add_middleware(
 )
 
 executor = ThreadPoolExecutor(max_workers=4)
-
-# Dùng chung 1 store cho tất cả jobs
 job_store: dict = {}
 
 
-# ── Helpers ───────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def parse_crew_result(raw_output: str) -> dict:
     try:
@@ -42,7 +40,7 @@ def parse_crew_result(raw_output: str) -> dict:
     raise ValueError(f"Cannot parse JSON: {raw_output[:200]}")
 
 
-# ── Models ────────────────────────────────────────────────────
+# ── Models ────────────────────────────────────────────────────────────────────
 
 class CVAnalysisRequest(BaseModel):
     cv_text: str
@@ -67,7 +65,6 @@ class ImproveRequest(BaseModel):
     cv_text: str
     position_title: str
     position_key_skills: str
-    session_id: Optional[str] = None
 
 class JobsRequest(BaseModel):
     cv_text: str
@@ -75,7 +72,7 @@ class JobsRequest(BaseModel):
     session_id: Optional[str] = None
 
 
-# ── CV Analysis ───────────────────────────────────────────────
+# ── CV Analysis ───────────────────────────────────────────────────────────────
 
 def run_crew_analysis(analysis_id: str, cv_text: str, jd_text: str):
     try:
@@ -116,44 +113,47 @@ async def get_analysis_status(analysis_id: str):
     return JobStatus(analysis_id=analysis_id, status=job["status"], result=result, error=job.get("error"))
 
 
-# ── Improve CV ────────────────────────────────────────────────
+# ── Improve CV ────────────────────────────────────────────────────────────────
 
-def run_improve_job(session_id: str, cv_text: str, position_title: str, position_key_skills: str):
+def run_improve_job(task_id: str, cv_text: str, position_title: str, position_key_skills: str):
     try:
-        job_store[session_id]["status"] = "processing"
-        crew = CVImproveCrew().crew()
-        result = crew.kickoff(inputs={
-            "cv_text": cv_text,
-            "position_title": position_title,
+        job_store[task_id]["status"] = "processing"
+        result = CVImproveCrew().crew().kickoff(inputs={
+            "cv_text":             cv_text,
+            "position_title":      position_title,
             "position_key_skills": position_key_skills,
         })
         parsed = parse_crew_result(result.raw)
-        job_store[session_id] = {"status": "completed", "result": parsed}
+        job_store[task_id] = {"status": "completed", "result": parsed}
     except Exception as e:
-        job_store[session_id] = {"status": "failed", "error": str(e)}
+        job_store[task_id] = {"status": "failed", "error": str(e)}
 
-@app.post("/api/improve/start")
-async def start_improve(request: ImproveRequest, background_tasks: BackgroundTasks):
-    session_id = request.session_id or str(uuid.uuid4())
-    job_store[session_id] = {"status": "pending"}
+# POST /api/improve  →  trả về { "id": task_id }  (frontend dùng field "id")
+@app.post("/api/improve")
+async def start_improve(request: ImproveRequest):
+    task_id = str(uuid.uuid4())
+    job_store[task_id] = {"status": "pending"}
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(executor, run_improve_job, session_id, request.cv_text, request.position_title, request.position_key_skills)
-    return {"session_id": session_id, "status": "pending"}
+    loop.run_in_executor(
+        executor, run_improve_job,
+        task_id, request.cv_text, request.position_title, request.position_key_skills
+    )
+    return {"id": task_id}
 
-@app.get("/api/improve/{session_id}/status")
-async def improve_status(session_id: str):
-    if session_id not in job_store:
+# GET /api/improve/{task_id}/status  →  { status, result?, error? }
+@app.get("/api/improve/{task_id}/status")
+async def improve_status(task_id: str):
+    if task_id not in job_store:
         raise HTTPException(status_code=404, detail="Improve job not found")
-    return job_store[session_id]
+    return job_store[task_id]
 
 
-# ── Job Matching ──────────────────────────────────────────────
+# ── Job Matching ──────────────────────────────────────────────────────────────
 
 def run_jobs_job(session_id: str, cv_text: str, positions_list: str):
     try:
         job_store[session_id]["status"] = "processing"
-        crew = JobMatchCrew().crew()
-        result = crew.kickoff(inputs={
+        result = JobMatchCrew().crew().kickoff(inputs={
             "cv_text": cv_text,
             "positions_list": positions_list,
         })
