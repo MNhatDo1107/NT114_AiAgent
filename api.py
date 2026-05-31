@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -8,7 +8,8 @@ import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from crew_cv import CVMatchingCrew
-from crew_improve import CVImproveCrew
+from crew_improve import CVImproveCrewRunner as CVImproveCrew
+import requests as http_requests
 from crew_jobs import JobMatchCrew
 
 app = FastAPI(title="CV Analysis AI Agent API")
@@ -115,7 +116,8 @@ async def get_analysis_status(analysis_id: str):
 
 # ── Improve CV ────────────────────────────────────────────────────────────────
 
-def run_improve_job(task_id: str, cv_text: str, position_title: str, position_key_skills: str):
+def run_improve_job(task_id: str, cv_text: str, position_title: str,
+                    position_key_skills: str, auth_token: str = ""):
     try:
         job_store[task_id]["status"] = "processing"
         result = CVImproveCrew().crew().kickoff(inputs={
@@ -125,18 +127,39 @@ def run_improve_job(task_id: str, cv_text: str, position_title: str, position_ke
         })
         parsed = parse_crew_result(result.raw)
         job_store[task_id] = {"status": "completed", "result": parsed}
+
+        # Gọi Spring Boot backend để lưu lịch sử
+        if auth_token:
+            try:
+                BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+                http_requests.post(
+                    f"{BACKEND_URL}/api/cv-improve",
+                    json={
+                        "cvText":             cv_text,
+                        "positionTitle":      position_title,
+                        "positionKeySkills":  position_key_skills,
+                        **parsed,
+                    },
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                    timeout=10,
+                )
+            except Exception as save_err:
+                print(f"[api] Warning: không lưu được lịch sử: {save_err}")
     except Exception as e:
         job_store[task_id] = {"status": "failed", "error": str(e)}
 
 # POST /api/improve  →  trả về { "id": task_id }  (frontend dùng field "id")
 @app.post("/api/improve")
-async def start_improve(request: ImproveRequest):
+async def start_improve(request: ImproveRequest, authorization: str = Header(default="")):
     task_id = str(uuid.uuid4())
     job_store[task_id] = {"status": "pending"}
+    # Lấy token từ header Authorization: Bearer <token>
+    auth_token = authorization.replace("Bearer ", "").strip() if authorization else ""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         executor, run_improve_job,
-        task_id, request.cv_text, request.position_title, request.position_key_skills
+        task_id, request.cv_text, request.position_title,
+        request.position_key_skills, auth_token
     )
     return {"id": task_id}
 

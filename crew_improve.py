@@ -1,27 +1,10 @@
 import json
 import re
 import os
+import time
 import yaml
 from crewai import Agent, Task, Crew, Process, LLM
-from crewai.project import CrewBase, agent, task, crew
 from pathlib import Path
-
-
-def _get_llm() -> LLM:
-    """
-    Tạo LLM dùng Groq.
-    GROQ_API_KEY đọc từ .env hoặc environment variable.
-    Model mặc định: llama-3.1-8b-instant (nhanh, miễn phí).
-    Đổi sang llama-3.3-70b-versatile nếu cần kết quả tốt hơn.
-    """
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise EnvironmentError("GROQ_API_KEY chưa được set trong .env")
-    return LLM(
-        model="groq/llama-3.1-8b-instant",
-        api_key=api_key,
-        temperature=0.3,
-    )
 
 FALLBACK_RESULT = {
     "overallScore": 0,
@@ -33,11 +16,24 @@ FALLBACK_RESULT = {
 }
 
 
-def _load_yaml(path: str) -> dict:
-    """Load YAML file relative to this script's directory."""
-    base = Path(__file__).parent
-    with open(base / path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+# Models còn active trên Groq (tháng 5/2026)
+# Ref: https://console.groq.com/docs/models
+GROQ_MODELS = [
+    "groq/llama-3.3-70b-versatile",   # primary — chất lượng cao nhất
+    "groq/llama-3.1-8b-instant",      # fallback — nhanh, ít token hơn
+]
+
+
+def _get_llm(model: str = GROQ_MODELS[0]) -> LLM:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GROQ_API_KEY chưa được set trong .env")
+    return LLM(
+        model=model,
+        api_key=api_key,
+        temperature=0.3,
+        max_tokens=2048,
+    )
 
 
 def extract_json(text: str) -> dict:
@@ -84,99 +80,172 @@ def validate_result(data: dict) -> dict:
     }
 
 
+def _truncate_cv(cv_text: str, max_chars: int = 1500) -> str:
+    """Cắt CV nếu quá dài để tiết kiệm token."""
+    if len(cv_text) <= max_chars:
+        return cv_text
+    return cv_text[:max_chars] + "\n... [CV đã được rút gọn]"
+
+
+def _truncate_skills(skills: str, max_skills: int = 20) -> str:
+    """Chỉ lấy tối đa N skills để tránh vượt TPM."""
+    parts = [s.strip() for s in skills.split(",") if s.strip()]
+    return ", ".join(parts[:max_skills])
+
+
 class CVImproveCrew:
     """
-    3-agent crew chạy tuần tự:
-      1. cv_reader_agent     — trích xuất thông tin CV
-      2. position_analyst    — phân tích yêu cầu vị trí
-      3. improve_agent       — gap analysis, trả JSON
-    
-    KHÔNG dùng @CrewBase để tránh lỗi "str has no attribute get".
-    Load YAML thủ công, tự gán agent cho task.
+    Single-agent crew — 1 agent, 1 task.
+    Gộp đọc CV + phân tích vị trí + gợi ý vào 1 lần gọi LLM
+    để tránh rate limit Groq free tier.
     """
 
-    def __init__(self):
-        self._agents_cfg = _load_yaml("config/improve/agents.yaml")
-        self._tasks_cfg  = _load_yaml("config/improve/tasks.yaml")
-
-    def _make_agents(self):
-        llm = _get_llm()
-        return {
-            "cv_reader": Agent(
-                role=self._agents_cfg["cv_reader_agent"]["role"],
-                goal=self._agents_cfg["cv_reader_agent"]["goal"],
-                backstory=self._agents_cfg["cv_reader_agent"]["backstory"],
-                llm=llm,
-                verbose=True,
-                allow_delegation=False,
-            ),
-            "analyst": Agent(
-                role=self._agents_cfg["position_analyst_agent"]["role"],
-                goal=self._agents_cfg["position_analyst_agent"]["goal"],
-                backstory=self._agents_cfg["position_analyst_agent"]["backstory"],
-                llm=llm,
-                verbose=True,
-                allow_delegation=False,
-            ),
-            "improver": Agent(
-                role=self._agents_cfg["improve_agent"]["role"],
-                goal=self._agents_cfg["improve_agent"]["goal"],
-                backstory=self._agents_cfg["improve_agent"]["backstory"],
-                llm=llm,
-                verbose=True,
-                allow_delegation=False,
-            ),
-        }
+    def __init__(self, model: str = GROQ_MODELS[0]):
+        self._model = model
 
     def crew(self) -> Crew:
-        agents = self._make_agents()
+        llm = _get_llm(self._model)
 
-        read_cv = Task(
-            description=self._tasks_cfg["read_cv_task"]["description"],
-            expected_output=self._tasks_cfg["read_cv_task"]["expected_output"],
-            agent=agents["cv_reader"],
+        agent = Agent(
+            role="Chuyên gia phân tích CV IT",
+            goal="Phân tích CV và đưa ra gợi ý cải thiện phù hợp với vị trí IT",
+            backstory=(
+                "Bạn là Career Coach IT với 10 năm kinh nghiệm, "
+                "đã tư vấn hàng trăm ứng viên tối ưu CV để pass ATS "
+                "và gây ấn tượng với nhà tuyển dụng kỹ thuật."
+            ),
+            llm=llm,
+            verbose=True,
+            allow_delegation=False,
         )
 
-        analyze_pos = Task(
-            description=self._tasks_cfg["analyze_position_task"]["description"],
-            expected_output=self._tasks_cfg["analyze_position_task"]["expected_output"],
-            agent=agents["analyst"],
-        )
+        task = Task(
+            description="""
+Phân tích CV sau và đưa ra gợi ý cải thiện cho vị trí {position_title}.
 
-        improve = Task(
-            description=self._tasks_cfg["improve_task"]["description"],
-            expected_output=self._tasks_cfg["improve_task"]["expected_output"],
-            agent=agents["improver"],
-            context=[read_cv, analyze_pos],   # nhận output từ 2 task trước
+CV:
+{cv_text}
+
+KEY SKILLS yêu cầu (tag: [CORE]=bắt buộc, [JUNIOR]=cần từ 1-3 năm, [PLUS]=ưu tiên):
+{position_key_skills}
+
+Trả về JSON hợp lệ DUY NHẤT, KHÔNG có text khác, KHÔNG có markdown:
+{{
+  "overallScore": <0-100>,
+  "summary": "<nhận xét tổng thể 2 câu tiếng Việt>",
+  "improvements": [
+    {{
+      "section": "<Skills|Experience|Projects|Summary|Education>",
+      "issue": "<vấn đề>",
+      "suggestion": "<gợi ý cụ thể>",
+      "priority": "<high|medium|low>"
+    }}
+  ],
+  "missingSkills": ["<chỉ [CORE] và [JUNIOR] còn thiếu>"],
+  "strongPoints": ["<điểm mạnh>"],
+  "quickWins": ["<việc 1>", "<việc 2>", "<việc 3>"]
+}}
+
+Giới hạn: tối đa 4 improvements, 5 missingSkills, 3 strongPoints, đúng 3 quickWins.
+""",
+            expected_output="JSON hợp lệ với overallScore, summary, improvements, missingSkills, strongPoints, quickWins",
+            agent=agent,
         )
 
         return Crew(
-            agents=list(agents.values()),
-            tasks=[read_cv, analyze_pos, improve],
+            agents=[agent],
+            tasks=[task],
             process=Process.sequential,
             verbose=True,
         )
 
 
-# ── Test chạy trực tiếp: python crew_improve.py ──────────────────────────────
+def run_with_retry(cv_text: str, position_title: str, position_key_skills: str) -> dict:
+    """
+    Chạy crew với fallback model + retry khi rate limit.
+    Thử lần lượt: llama-3.3-70b → llama-3.1-8b-instant
+    Mỗi model retry tối đa 2 lần với delay 15s.
+    """
+    cv_short     = _truncate_cv(cv_text, max_chars=1500)
+    skills_short = _truncate_skills(position_key_skills, max_skills=20)
+    inputs = {
+        "cv_text":             cv_short,
+        "position_title":      position_title,
+        "position_key_skills": skills_short,
+    }
+
+    for model in GROQ_MODELS:
+        for attempt in range(1, 3):
+            try:
+                print(f"[CVImproveCrew] Model={model} attempt={attempt}...")
+                crew_instance = CVImproveCrew(model=model)
+                result = crew_instance.crew().kickoff(inputs=inputs)
+                raw    = result.raw if hasattr(result, "raw") else str(result)
+                parsed = extract_json(raw)
+                return validate_result(parsed)
+
+            except Exception as e:
+                err_msg = str(e)
+                is_rate_limit   = "rate_limit_exceeded" in err_msg or "RateLimitError" in err_msg
+                is_decommission = "decommissioned" in err_msg or "BadRequestError" in err_msg
+
+                if is_decommission:
+                    print(f"[CVImproveCrew] Model {model} decommissioned, thử model tiếp theo...")
+                    break  # bỏ qua model này, sang model tiếp
+                elif is_rate_limit:
+                    wait = 15 * attempt
+                    print(f"[CVImproveCrew] Rate limit. Chờ {wait}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"[CVImproveCrew] Lỗi: {err_msg[:300]}")
+                    return {**FALLBACK_RESULT, "summary": f"Lỗi: {err_msg[:200]}"}
+
+    return {**FALLBACK_RESULT, "summary": "Không thể kết nối AI. Vui lòng thử lại sau vài phút."}
+
+
+# ── Để api.py gọi ─────────────────────────────────────────────────────────────
+
+class CVImproveCrewRunner:
+    """Wrapper cho api.py — giữ interface cũ."""
+
+    def crew(self):
+        return _FakeCrew()
+
+
+class _FakeCrew:
+    def kickoff(self, inputs: dict) -> "_FakeResult":
+        result = run_with_retry(
+            cv_text=inputs.get("cv_text", ""),
+            position_title=inputs.get("position_title", ""),
+            position_key_skills=inputs.get("position_key_skills", ""),
+        )
+        return _FakeResult(json.dumps(result, ensure_ascii=False))
+
+
+class _FakeResult:
+    def __init__(self, raw: str):
+        self.raw = raw
+
+
+# ── Test trực tiếp ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     SAMPLE_CV = """
     Nguyễn Văn An - DevOps Engineer, 2 năm kinh nghiệm
-    Skills: Linux, Docker, Docker Compose, Jenkins, Python, Bash, AWS EC2/S3 cơ bản, Git
+    Skills: Linux, Docker, Jenkins, Python, Bash, Git, AWS EC2/S3 cơ bản
     Kinh nghiệm: DevOps tại Công ty ABC (2022-nay)
     - Quản lý server Linux, deploy ứng dụng bằng Docker
-    - Viết Jenkins pipeline cho 3 dự án nội bộ
+    - Viết Jenkins pipeline cho 3 dự án
     Học vấn: Đại học Bách Khoa CNTT 2022
     """
 
-    crew_instance = CVImproveCrew()
-    result = crew_instance.crew().kickoff(inputs={
-        "cv_text":             SAMPLE_CV,
-        "position_title":      "DevOps Engineer (Junior)",
-        "position_key_skills": "Docker,Kubernetes,Jenkins,GitHub Actions,AWS,Terraform,Ansible,Linux,Prometheus,Grafana",
-    })
-
-    parsed = extract_json(result.raw)
-    final  = validate_result(parsed)
+    final = run_with_retry(
+        cv_text=SAMPLE_CV,
+        position_title="DevOps Engineer (Junior)",
+        position_key_skills=(
+            "[CORE]Linux,[CORE]Docker,[CORE]Jenkins,[CORE]Git,"
+            "[JUNIOR]Kubernetes,[JUNIOR]Terraform,[JUNIOR]AWS,[JUNIOR]Prometheus,"
+            "[PLUS]Helm,[PLUS]ArgoCD"
+        ),
+    )
     print(json.dumps(final, ensure_ascii=False, indent=2))
