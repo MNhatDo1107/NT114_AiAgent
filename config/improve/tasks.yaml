@@ -1,0 +1,89 @@
+read_cv_task:
+  description: >
+    Đọc và phân tích CV sau, trích xuất thông tin kỹ thuật có cấu trúc:
+
+    CV CONTENT:
+    {cv_text}
+
+    Trích xuất rõ ràng:
+    1. Technical skills: ngôn ngữ lập trình, frameworks, tools, cloud platforms
+    2. Kinh nghiệm: vị trí, công ty, số năm (tính tổng)
+    3. Dự án nổi bật: tên, công nghệ, vai trò
+    4. Học vấn và chứng chỉ
+    5. Điểm mạnh kỹ thuật tổng thể
+
+    Nếu CV rỗng hoặc không rõ, ghi "Không có thông tin".
+  expected_output: >
+    Bản phân tích CV có 5 mục: technical_skills, work_experience,
+    projects, education_certs, strengths
+
+analyze_position_task:
+  description: >
+    Phân tích yêu cầu cho vị trí IT:
+
+    VỊ TRÍ: {position_title}
+    KEY SKILLS (có gắn tag level):
+    {position_key_skills}
+
+    Giải thích tag level:
+    - [CORE]  = kỹ năng bắt buộc mọi level (intern/fresher/junior đều cần)
+    - [JUNIOR] = bắt buộc từ junior (1-3 năm), fresher/intern là lợi thế nếu có
+    - [PLUS]  = nice-to-have, có thì tốt nhưng không bắt buộc
+
+    Dựa trên tên vị trí {position_title}, xác định:
+    1. Level yêu cầu (intern/fresher/junior) và kỳ vọng tương ứng
+    2. Skills [CORE] nào quan trọng nhất cần kiểm tra ngay
+    3. Skills [JUNIOR] nào phân biệt junior với fresher
+    4. Skills [PLUS] nào tạo lợi thế cạnh tranh nhất
+  expected_output: >
+    Phân tích yêu cầu vị trí với must-have theo từng level,
+    skills phân biệt level và skills tạo lợi thế
+
+improve_task:
+  description: >
+    Dựa trên kết quả phân tích CV và yêu cầu vị trí {position_title},
+    đưa ra đánh giá và gợi ý cải thiện CV.
+
+    KEY SKILLS (có tag level):
+    {position_key_skills}
+
+    Tag level: [CORE]=bắt buộc mọi level | [JUNIOR]=cần từ junior | [PLUS]=ưu tiên
+
+    QUAN TRỌNG: Chỉ trả về JSON hợp lệ, KHÔNG có text nào khác bên ngoài,
+    KHÔNG có markdown code block (không có ```json), không có giải thích thêm.
+
+    Format JSON bắt buộc:
+    {{
+      "overallScore": <số 0-100, đánh giá mức độ phù hợp CV với vị trí>,
+      "summary": "<nhận xét tổng thể 2-3 câu bằng tiếng Việt>",
+      "improvements": [
+        {{
+          "section": "<Summary|Skills|Experience|Projects|Education>",
+          "issue": "<vấn đề hiện tại trong CV>",
+          "suggestion": "<gợi ý cụ thể cần làm, dẫn chiếu skill cụ thể>",
+          "priority": "<high|medium|low>"
+        }}
+      ],
+      "missingSkills": ["<skill [CORE] hoặc [JUNIOR] còn thiếu>"],
+      "strongPoints": ["<điểm mạnh CV so với yêu cầu vị trí>"],
+      "quickWins": [
+        "<việc cụ thể có thể làm trong 1 tuần để tăng điểm ngay>",
+        "<việc thứ 2>",
+        "<việc thứ 3>"
+      ]
+    }}
+
+    Quy tắc đánh giá overallScore:
+    - 80-100: CV rất phù hợp, có đủ phần lớn [CORE] và [JUNIOR]
+    - 60-79: CV khá phù hợp, có đủ [CORE] nhưng thiếu một số [JUNIOR]
+    - 40-59: CV cơ bản, có một số [CORE] nhưng còn nhiều gap
+    - 0-39: CV còn yếu, thiếu nhiều [CORE] cơ bản
+
+    Quy tắc gợi ý:
+    - improvements: tối đa 5 mục, ưu tiên [CORE] thiếu trước
+    - missingSkills: chỉ [CORE] và [JUNIOR] thực sự thiếu (bỏ qua [PLUS])
+    - quickWins: đúng 3 việc, cụ thể, làm được trong 1 tuần
+    - Toàn bộ nội dung bằng tiếng Việt
+  expected_output: >
+    JSON hợp lệ với đầy đủ: overallScore, summary, improvements,
+    missingSkills, strongPoints, quickWins

@@ -1,0 +1,33 @@
+extract_skills_task:
+  description: >
+    Đọc CV sau và trích xuất kỹ năng IT:
+    CV: {{cv_text}}
+
+    Liệt kê: programming languages, frameworks, databases, tools, cloud, level kinh nghiệm.
+  expected_output: "Danh sách kỹ năng IT của ứng viên"
+
+match_jobs_task:
+  description: >
+    Dựa trên kỹ năng IT vừa trích xuất, so sánh với danh sách vị trí:
+    {{positions_list}}
+
+    Tìm TOP 3 vị trí phù hợp nhất. Trả về JSON DUY NHẤT:
+
+    {
+      "matches": [
+        {
+          "positionId": number,
+          "positionTitle": "string",
+          "matchPercent": number (0-100),
+          "matchedSkills": ["string"],
+          "missingSkills": ["string"],
+          "reason": "string (lý do phù hợp 1-2 câu)"
+        }
+      ]
+    }
+
+    Yêu cầu:
+    - Đúng 3 vị trí, sắp xếp theo matchPercent giảm dần
+    - positionId phải khớp với id trong danh sách đầu vào
+    - Chỉ trả JSON, không thêm text ngoài
+  expected_output: "JSON top 3 vị trí IT phù hợp nhất"

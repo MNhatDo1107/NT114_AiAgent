@@ -1,4 +1,3 @@
-# tasks.yaml
 cv_task:
   description: "Phân tích CV: {{cv_text}}. Trích xuất Kỹ năng, Kinh nghiệm, Dự án, Học vấn."
   expected_output: "JSON chứa thông tin CV gọn nhẹ."
@@ -10,20 +9,19 @@ jd_task:
 match_task:
   description: >
     Dựa trên kết quả phân tích CV và JD ở trên:
-
-    - Tính % độ phù hợp (0-100)
+    - Tính % độ phù hợp theo chuẩn ATS (0-100)
     - Liệt kê kỹ năng khớp
     - Liệt kê kỹ năng thiếu
-  expected_output: "Kết quả so khớp"
+  expected_output: "Kết quả so khớp ATS"
 
 gap_task:
   description: >
     Dựa trên kết quả so khớp:
-
     - Xác định kỹ năng còn thiếu
-    - Điểm yếu
-    - Gợi ý cải thiện
-  expected_output: "Phân tích thiếu sót"
+    - Điểm yếu của CV so với JD
+    - Nếu matchScore >= 70: gợi ý cách tối ưu CV (cách diễn đạt, từ khóa, format)
+    - Nếu matchScore < 70: gợi ý bổ sung kiến thức/kỹ năng còn thiếu (khóa học, chứng chỉ, dự án thực hành)
+  expected_output: "Phân tích thiếu sót và gợi ý phù hợp theo mức điểm"
 
 review_task:
   description: >
@@ -31,14 +29,22 @@ review_task:
 
     {
       "matchScore": number (0-100),
-      "cvFeedback": "string",
+      "cvFeedback": "string - nhận xét tổng quan về mức độ phù hợp",
       "matchedKeywords": ["string"],
       "missingKeywords": ["string"],
-      "aiTips": "string"
+      "aiTips": "string - lời khuyên tổng quát",
+      "recommendationType": "improve_cv" hoặc "learn_skills",
+      "recommendations": ["string - mỗi phần tử là 1 gợi ý cụ thể, tối đa 5 gợi ý"]
     }
+
+    Quy tắc recommendationType:
+    - Nếu matchScore >= 70: recommendationType = "improve_cv", recommendations là các gợi ý tối ưu CV/từ khóa để vượt qua ATS
+    - Nếu matchScore < 70: recommendationType = "learn_skills", recommendations là các gợi ý bổ sung kiến thức/kỹ năng còn thiếu (khóa học, chứng chỉ, dự án)
 
     Yêu cầu:
     - Chỉ trả JSON, không thêm text ngoài
-    - matchScore phải là số
-    - matchedKeywords và missingKeywords là array
+    - matchScore phải là số nguyên
+    - matchedKeywords và missingKeywords là array of string
+    - recommendations là array of string, tối đa 5 phần tử
+    - Trả lời bằng tiếng Việt
   expected_output: "JSON chuẩn cho backend"
