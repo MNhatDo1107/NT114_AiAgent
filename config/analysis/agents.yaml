@@ -1,39 +1,31 @@
-#agents.yaml
-cv_agent:
-  role: "Chuyên gia phân tích CV"
-  goal: "Trích xuất thông tin quan trọng từ CV"
-  backstory: >
-    Bạn là chuyên gia HR có kinh nghiệm đọc hàng nghìn CV.
-    Bạn giỏi nhận diện kỹ năng, kinh nghiệm, dự án và học vấn.
-  verbose: true
+# config/analysis/agents.yaml — MỚI
 
-jd_agent:
-  role: "Chuyên gia phân tích Job Description"
-  goal: "Xác định yêu cầu từ mô tả công việc"
+parser_agent:
+  role: "Chuyên gia phân tích CV và JD"
+  goal: "Trích xuất đồng thời thông tin từ CV và JD trong một lần phân tích"
   backstory: >
-    Bạn chuyên phân tích JD để tìm ra kỹ năng bắt buộc,
-    kỹ năng ưu tiên và mức kinh nghiệm cần thiết.
+    Bạn là HR senior có thể đọc song song CV và JD,
+    nhận diện ngay skills, experience level và yêu cầu tuyển dụng.
+    Luôn trả về JSON thuần, không giải thích.
+  llm: groq/llama-3.1-8b-instant
+  max_rpm: 2
   verbose: true
 
 matching_agent:
-  role: "Chuyên gia đánh giá phù hợp"
-  goal: "So sánh CV và JD để tính độ phù hợp"
+  role: "Chuyên gia ATS và lộ trình học tập"
+  goal: "Tính điểm phù hợp, tìm gap skills và tra cứu roadmap học tập"
   backstory: >
-    Bạn là nhà tuyển dụng khó tính, đánh giá ứng viên một cách khách quan,
-    dựa trên kỹ năng và kinh nghiệm thực tế.
-  verbose: true
-
-gap_agent:
-  role: "Chuyên gia phân tích khoảng thiếu"
-  goal: "Xác định những điểm còn thiếu của ứng viên"
-  backstory: >
-    Bạn giúp ứng viên hiểu họ đang thiếu gì và cần cải thiện điểm nào.
+    Bạn đánh giá CV theo tiêu chí ATS, xác định missing skills
+    và gọi learning_roadmap_tool để tra cứu lộ trình cụ thể.
+  llm: groq/llama-3.1-8b-instant
+  max_rpm: 2
   verbose: true
 
 reviewer_agent:
-  role: "Quản lý tuyển dụng"
-  goal: "Đưa ra quyết định cuối cùng"
+  role: "HR Manager tổng hợp kết quả"
+  goal: "Tổng hợp phân tích thành JSON chuẩn cho backend"
   backstory: >
-    Bạn là HR senior có kinh nghiệm, đưa ra quyết định tuyển dụng
-    và feedback chi tiết như trong thực tế.
+    Bạn đưa ra quyết định cuối cùng dựa trên dữ liệu từ các agent trước.
+    Chỉ trả JSON theo đúng format, không thêm text ngoài.
+  llm: groq/llama-3.3-70b-versatile
   verbose: true

@@ -1,156 +1,62 @@
-#crew_cv.py
-from crewai import Agent, Task, Crew, LLM
+"""
+crew_cv.py
+
+Thay đổi v2:
+- matching_agent gọi learning_roadmap_tool với experience_level từ parse_task
+- task_delay giảm còn 20s (3 tasks → 3 lần delay)
+"""
+import time
+
+from crewai import Agent, Task, Crew, Process
 from crewai.project import CrewBase, agent, task, crew
-# from crewai_tools import ScrapeWebsiteTool
-from dotenv import load_dotenv
 
-load_dotenv()
+from tools.learning_roadmap_tool import LearningRoadmapTool
 
-llm = LLM(
-   model="groq/llama-3.3-70b-versatile", 
-   temperature=0,
-)
 
-# tool = ScrapeWebsiteTool(
-#     website = "https://careerviet.vn/viec-lam-noi-bat-trong-tuan-l8a30"
-# )
+def _task_delay(output):
+    time.sleep(20)
+
 
 @CrewBase
-class CVMatchingCrew():
-
+class CVMatchingCrew:
     agents_config = "config/analysis/agents.yaml"
-    tasks_config = "config/analysis/tasks.yaml"
-
-    # ================= AGENTS =================
-
-    @agent
-    def cv_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config["cv_agent"],
-            llm=llm,
-            verbose=True,
-            # tools=[tool]
-        )
+    tasks_config  = "config/analysis/tasks.yaml"
+    _roadmap_tool = LearningRoadmapTool()
 
     @agent
-    def jd_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config["jd_agent"],
-            llm=llm,
-            verbose=True,
-            # tools=[tool]
-        )
+    def parser_agent(self) -> Agent:
+        return Agent(config=self.agents_config["parser_agent"], verbose=True)
 
     @agent
     def matching_agent(self) -> Agent:
         return Agent(
             config=self.agents_config["matching_agent"],
-            llm=llm,
+            tools=[self._roadmap_tool],
             verbose=True,
-            # tools=[tool]
-        )
-
-    @agent
-    def gap_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config["gap_agent"],
-            llm=llm,
-            verbose=True,
-            # tools=[tool]
         )
 
     @agent
     def reviewer_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config["reviewer_agent"],
-            llm=llm,
-            verbose=True,
-            # tools=[tool]
-        )
-
-    # ================= TASKS =================
+        return Agent(config=self.agents_config["reviewer_agent"], verbose=True)
 
     @task
-    def cv_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["cv_task"],
-            agent=self.cv_agent()
-        )
-
-    @task
-    def jd_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["jd_task"],
-            agent=self.jd_agent()
-        )
+    def parse_task(self) -> Task:
+        return Task(config=self.tasks_config["parse_task"])
 
     @task
     def match_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["match_task"], 
-            agent=self.matching_agent()
-        )
-
-    @task
-    def gap_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["gap_task"],
-            agent=self.gap_agent()
-        )
+        return Task(config=self.tasks_config["match_task"])
 
     @task
     def review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["review_task"],
-            agent=self.reviewer_agent()
-        )
-    
-
+        return Task(config=self.tasks_config["review_task"])
 
     @crew
     def crew(self) -> Crew:
         return Crew(
-            agents=[
-                self.cv_agent(), 
-                self.jd_agent(), 
-                self.matching_agent(), 
-                self.gap_agent(), 
-                self.reviewer_agent(),
-            ],
-            tasks=[
-                self.cv_task(), 
-                self.jd_task(), 
-                self.match_task(), 
-                self.gap_task(), 
-                self.review_task(),
-            ],    
+            agents=self.agents,
+            tasks=self.tasks,
+            process=Process.sequential,
+            task_callback=_task_delay,
+            verbose=True,
         )
-    
-def multi_input(prompt):
-    print(prompt)
-    print("(Nhập nhiều dòng. Gõ 'END' để kết thúc)\n")
-
-    lines = []
-    while True:
-        line = input()
-        if line.strip().upper() == "END":
-            break
-        lines.append(line)
-
-    return "\n".join(lines)
-
-
-if __name__ == "__main__":
-    crew_base = CVMatchingCrew()
-
-    cv_text = multi_input("=== NHẬP CV ===")
-    jd_text = multi_input("=== NHẬP JD ===")
-
-    result = crew_base.crew().kickoff(
-        inputs={
-            "cv_text": cv_text, 
-            "jd_text": jd_text,
-        } 
-    )
-
-    print(result)

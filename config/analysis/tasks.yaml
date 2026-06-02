@@ -1,50 +1,69 @@
-cv_task:
-  description: "Phân tích CV: {{cv_text}}. Trích xuất Kỹ năng, Kinh nghiệm, Dự án, Học vấn."
-  expected_output: "JSON chứa thông tin CV gọn nhẹ."
+parse_task:
+  description: |
+    Phân tích CV và JD dưới đây, trả về JSON duy nhất, không kèm text ngoài.
 
-jd_task:
-  description: "Phân tích JD: {{jd_text}}. Trích xuất Yêu cầu bắt buộc, ưu tiên, kinh nghiệm."
-  expected_output: "JSON chứa thông tin JD gọn nhẹ."
+    CV: {cv_text}
+    JD: {jd_text}
+
+    Yêu cầu quan trọng:
+    - cv.skills: liệt kê tối đa 12 kỹ năng kỹ thuật cụ thể (tên công nghệ, tool, protocol)
+    - cv.level: suy ra từ số năm kinh nghiệm → "intern" (0), "fresher" (<1 năm), "junior" (1-3 năm), "mid" (3-5 năm), "senior" (5+ năm)
+    - jd.must_have và jd.nice_to_have: PHẢI là keyword kỹ thuật ngắn gọn (VD: "LAN/WAN", "Firewall", "Monitoring", "Backup", "Linux"), KHÔNG phải câu mô tả dài
+    - jd.position: tên vị trí sạch, không có khoảng cách thừa
+
+    Format JSON trả về:
+    {
+      "cv": {
+        "skills": ["skill1", "skill2"],
+        "experience_years": 0,
+        "level": "fresher"
+      },
+      "jd": {
+        "position": "System Administrator Intern",
+        "must_have": ["LAN/WAN", "Firewall", "Monitoring", "Linux", "Troubleshooting", "Network Security", "Log Management", "Backup"],
+        "nice_to_have": ["Network Documentation", "Reporting"]
+      }
+    }
+  expected_output: "JSON object với 2 key: cv (có level) và jd, must_have là keyword kỹ thuật ngắn"
+  agent: parser_agent
 
 match_task:
-  description: >
-    Dựa trên kết quả phân tích CV và JD ở trên:
-    - Tính % độ phù hợp theo chuẩn ATS (0-100)
-    - Liệt kê kỹ năng khớp
-    - Liệt kê kỹ năng thiếu
-  expected_output: "Kết quả so khớp ATS"
+  description: |
+    Dựa trên kết quả phân tích CV và JD từ bước trước:
 
-gap_task:
-  description: >
-    Dựa trên kết quả so khớp:
-    - Xác định kỹ năng còn thiếu
-    - Điểm yếu của CV so với JD
-    - Nếu matchScore >= 70: gợi ý cách tối ưu CV (cách diễn đạt, từ khóa, format)
-    - Nếu matchScore < 70: gợi ý bổ sung kiến thức/kỹ năng còn thiếu (khóa học, chứng chỉ, dự án thực hành)
-  expected_output: "Phân tích thiếu sót và gợi ý phù hợp theo mức điểm"
-
-review_task:
-  description: >
-    Dựa trên toàn bộ phân tích trước đó, hãy trả về JSON DUY NHẤT theo format:
+    1. Đọc cv.level từ kết quả parse_task (intern/fresher/junior/mid/senior).
+    2. So sánh cv.skills với jd.must_have và jd.nice_to_have, tính matchScore, matchedKeywords, missingKeywords.
+    3. Gọi learning_roadmap_tool MỘT LẦN DUY NHẤT với:
+       - missing_skills = missingKeywords phân cách bằng dấu phẩy
+       - experience_level = cv.level từ bước 1 (VD: "fresher", "junior")
+    4. Trả về JSON sau, không kèm text ngoài:
 
     {
-      "matchScore": number (0-100),
-      "cvFeedback": "string - nhận xét tổng quan về mức độ phù hợp",
-      "matchedKeywords": ["string"],
-      "missingKeywords": ["string"],
-      "aiTips": "string - lời khuyên tổng quát",
-      "recommendationType": "improve_cv" hoặc "learn_skills",
-      "recommendations": ["string - mỗi phần tử là 1 gợi ý cụ thể, tối đa 5 gợi ý"]
+      "matchScore": 75,
+      "matchedKeywords": ["skill khớp 1", "skill khớp 2"],
+      "missingKeywords": ["skill thiếu 1", "skill thiếu 2"],
+      "experienceLevel": "<level từ cv>",
+      "learningTips": "3-4 gợi ý học ngắn gọn từ kết quả roadmap tool, phù hợp với level"
     }
 
-    Quy tắc recommendationType:
-    - Nếu matchScore >= 70: recommendationType = "improve_cv", recommendations là các gợi ý tối ưu CV/từ khóa để vượt qua ATS
-    - Nếu matchScore < 70: recommendationType = "learn_skills", recommendations là các gợi ý bổ sung kiến thức/kỹ năng còn thiếu (khóa học, chứng chỉ, dự án)
+    Chỉ được gọi learning_roadmap_tool, không gọi tool nào khác.
+  expected_output: "JSON với matchScore, matchedKeywords, missingKeywords, experienceLevel, learningTips"
+  agent: matching_agent
 
-    Yêu cầu:
-    - Chỉ trả JSON, không thêm text ngoài
-    - matchScore phải là số nguyên
-    - matchedKeywords và missingKeywords là array of string
-    - recommendations là array of string, tối đa 5 phần tử
-    - Trả lời bằng tiếng Việt
-  expected_output: "JSON chuẩn cho backend"
+review_task:
+  description: |
+    Dựa trên toàn bộ kết quả từ parse_task và match_task,
+    trả về JSON cuối cùng dưới đây, không kèm text ngoài, không markdown.
+
+    Không được gọi bất kỳ tool nào.
+
+    Các trường bắt buộc:
+    - matchScore: số nguyên 0-100 từ match_task
+    - cvFeedback: 2-3 câu tiếng Việt nhận xét điểm mạnh/yếu của CV
+    - matchedKeywords: list skills khớp từ match_task
+    - missingKeywords: list skills còn thiếu từ match_task
+    - aiTips: 2-3 câu tiếng Việt lời khuyên cải thiện, tham khảo learningTips — có đề cập level của ứng viên
+    - recommendationType: "improve_cv" nếu matchScore >= 70, "learn_skills" nếu < 70
+    - recommendations: list 3-4 gợi ý cụ thể tiếng Việt, phù hợp với experienceLevel
+  expected_output: "JSON object hoàn chỉnh cho backend, không có text thừa"
+  agent: reviewer_agent
