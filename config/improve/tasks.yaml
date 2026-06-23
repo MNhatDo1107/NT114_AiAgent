@@ -1,89 +1,217 @@
 read_cv_task:
   description: >
-    Đọc và phân tích CV sau, trích xuất thông tin kỹ thuật có cấu trúc:
+    Đọc và phân tích CV sau, trích xuất thông tin kỹ thuật có cấu trúc.
 
     CV CONTENT:
     {cv_text}
 
-    Trích xuất rõ ràng:
-    1. Technical skills: ngôn ngữ lập trình, frameworks, tools, cloud platforms
-    2. Kinh nghiệm: vị trí, công ty, số năm (tính tổng)
-    3. Dự án nổi bật: tên, công nghệ, vai trò
-    4. Học vấn và chứng chỉ
-    5. Điểm mạnh kỹ thuật tổng thể
+    ## BƯỚC 1 — KIỂM TRA CHẤT LƯỢNG CV
+    Đếm số từ và kiểm tra nội dung:
+    - Nếu CV có ít hơn 50 từ hoặc không chứa thông tin kỹ thuật nào:
+      set cv_quality = "insufficient" và dừng tại đây.
+    - Ngược lại: set cv_quality = "ok" và tiếp tục.
 
-    Nếu CV rỗng hoặc không rõ, ghi "Không có thông tin".
+    ## BƯỚC 2 — TRÍCH XUẤT THÔNG TIN (chỉ khi cv_quality = "ok")
+    Trích xuất trung thực, KHÔNG suy đoán hay bịa đặt:
+
+    1. technical_skills: liệt kê từng skill xuất hiện rõ ràng trong CV
+       (ngôn ngữ lập trình, frameworks, tools, cloud, DB, OS...)
+    2. work_experience: từng vị trí công việc, công ty, thời gian,
+       tính tổng số năm kinh nghiệm thực tế
+    3. projects: tên dự án, tech stack dùng, vai trò của ứng viên
+    4. education_certs: trường, ngành, chứng chỉ (CCNA, AWS, TOEIC...)
+    5. strengths: điểm mạnh kỹ thuật dựa trên bằng chứng từ CV,
+       KHÔNG viết chung chung như "kỹ năng làm việc nhóm"
+    6. inferred_level: ước tính level thực tế của ứng viên
+       (intern/fresher/junior/mid) dựa trên số năm KN và tech stack
+
+    Nếu một mục không có thông tin trong CV: ghi "Không tìm thấy".
+
   expected_output: >
-    Bản phân tích CV có 5 mục: technical_skills, work_experience,
-    projects, education_certs, strengths
+    Object gồm: cv_quality (ok/insufficient), technical_skills (list),
+    work_experience (list), total_years_exp (number), projects (list),
+    education_certs (list), strengths (list — chỉ kỹ thuật, có bằng chứng),
+    inferred_level (string).
+    Nếu cv_quality = "insufficient": chỉ trả về cv_quality và lý do.
 
 analyze_position_task:
   description: >
-    Phân tích yêu cầu cho vị trí IT:
+    Phân tích yêu cầu kỹ năng cho vị trí và level sau:
 
-    VỊ TRÍ: {position_title}
-    KEY SKILLS (có gắn tag level):
+    VỊ TRÍ + LEVEL: {position_title}
+    (Ví dụ: "DevOps Engineer (Fresher)" — level nằm trong ngoặc)
+
+    KEY SKILLS (gắn tag):
     {position_key_skills}
 
-    Giải thích tag level:
-    - [CORE]  = kỹ năng bắt buộc mọi level (intern/fresher/junior đều cần)
-    - [JUNIOR] = bắt buộc từ junior (1-3 năm), fresher/intern là lợi thế nếu có
-    - [PLUS]  = nice-to-have, có thì tốt nhưng không bắt buộc
+    ## Ý NGHĨA TAG
+    - [CORE]   = bắt buộc mọi level (Intern/Fresher/Junior đều phải có)
+    - [JUNIOR] = bắt buộc từ Junior (1-3 năm KN); Fresher/Intern có thì
+                 là lợi thế nhưng KHÔNG phải dealbreaker nếu thiếu
+    - [PLUS]   = nice-to-have mọi level; KHÔNG dùng để đánh giá gap
 
-    Dựa trên tên vị trí {position_title}, xác định:
-    1. Level yêu cầu (intern/fresher/junior) và kỳ vọng tương ứng
-    2. Skills [CORE] nào quan trọng nhất cần kiểm tra ngay
-    3. Skills [JUNIOR] nào phân biệt junior với fresher
-    4. Skills [PLUS] nào tạo lợi thế cạnh tranh nhất
+    ## NHIỆM VỤ
+    Dựa trên level trong {position_title}, xác định:
+
+    1. detected_level: level parse được từ tên vị trí (intern/fresher/junior)
+
+    2. must_have_skills: danh sách skills thực sự bắt buộc ở level này
+       - Nếu level Intern/Fresher: CHỈ lấy [CORE], bỏ qua [JUNIOR]
+       - Nếu level Junior: lấy [CORE] + [JUNIOR]
+       - Skill dạng "A hoặc B hoặc C": giữ nguyên dạng đó để improve_task xử lý
+
+    3. bonus_skills: skills tạo lợi thế nhưng không bắt buộc
+       - Nếu level Intern/Fresher: top 5 [JUNIOR] quan trọng nhất
+       - Nếu level Junior: top 5 [PLUS] quan trọng nhất
+
+    4. dealbreakers: top 3-5 [CORE] skills quan trọng nhất mà thiếu là
+       gần như chắc chắn bị loại (chọn skills cốt lõi nhất của ngành)
+
+    5. level_expectation: 1-2 câu mô tả kỳ vọng thực tế ở level này
+
   expected_output: >
-    Phân tích yêu cầu vị trí với must-have theo từng level,
-    skills phân biệt level và skills tạo lợi thế
+    Object gồm: detected_level, must_have_skills (list),
+    bonus_skills (list), dealbreakers (list), level_expectation (string).
 
 improve_task:
   description: >
-    Dựa trên kết quả phân tích CV và yêu cầu vị trí {position_title},
-    đưa ra đánh giá và gợi ý cải thiện CV.
+    Dựa trên kết quả phân tích CV và yêu cầu vị trí, đánh giá và
+    đưa ra gợi ý cải thiện CV.
 
-    KEY SKILLS (có tag level):
-    {position_key_skills}
+    VỊ TRÍ + LEVEL: {position_title}
 
-    Tag level: [CORE]=bắt buộc mọi level | [JUNIOR]=cần từ junior | [PLUS]=ưu tiên
-
-    QUAN TRỌNG: Chỉ trả về JSON hợp lệ, KHÔNG có text nào khác bên ngoài,
-    KHÔNG có markdown code block (không có ```json), không có giải thích thêm.
-
-    Format JSON bắt buộc:
-    {{
-      "overallScore": <số 0-100, đánh giá mức độ phù hợp CV với vị trí>,
-      "summary": "<nhận xét tổng thể 2-3 câu bằng tiếng Việt>",
-      "improvements": [
-        {{
-          "section": "<Summary|Skills|Experience|Projects|Education>",
-          "issue": "<vấn đề hiện tại trong CV>",
-          "suggestion": "<gợi ý cụ thể cần làm, dẫn chiếu skill cụ thể>",
-          "priority": "<high|medium|low>"
-        }}
-      ],
-      "missingSkills": ["<skill [CORE] hoặc [JUNIOR] còn thiếu>"],
-      "strongPoints": ["<điểm mạnh CV so với yêu cầu vị trí>"],
+    ## BƯỚC 1 — KIỂM TRA CV QUALITY
+    Nếu cv_quality từ read_cv_task = "insufficient":
+    Trả về JSON sau và DỪNG:
+    {
+      "overallScore": 0,
+      "summary": "CV chưa có đủ thông tin để phân tích. Vui lòng bổ sung thông tin kỹ thuật, kinh nghiệm và dự án vào CV.",
+      "improvements": [{"section": "Tổng thể", "issue": "CV quá sơ sài", "suggestion": "Bổ sung đầy đủ thông tin: Skills, Experience, Projects, Education", "priority": "high"}],
+      "missingSkills": [],
+      "strongPoints": [],
       "quickWins": [
-        "<việc cụ thể có thể làm trong 1 tuần để tăng điểm ngay>",
-        "<việc thứ 2>",
-        "<việc thứ 3>"
+        "Viết lại CV với đầy đủ mục: Skills, Experience, Projects, Education",
+        "Liệt kê cụ thể các công nghệ đã dùng trong từng dự án",
+        "Mô tả ít nhất 1-2 dự án thực tế hoặc cá nhân với tech stack cụ thể"
       ]
-    }}
+    }
 
-    Quy tắc đánh giá overallScore:
-    - 80-100: CV rất phù hợp, có đủ phần lớn [CORE] và [JUNIOR]
-    - 60-79: CV khá phù hợp, có đủ [CORE] nhưng thiếu một số [JUNIOR]
-    - 40-59: CV cơ bản, có một số [CORE] nhưng còn nhiều gap
-    - 0-39: CV còn yếu, thiếu nhiều [CORE] cơ bản
+    ## BƯỚC 2 — SO SÁNH TỪNG SKILL (BẮT BUỘC LÀM TRƯỚC KHI VIẾT OUTPUT)
 
-    Quy tắc gợi ý:
-    - improvements: tối đa 5 mục, ưu tiên [CORE] thiếu trước
-    - missingSkills: chỉ [CORE] và [JUNIOR] thực sự thiếu (bỏ qua [PLUS])
-    - quickWins: đúng 3 việc, cụ thể, làm được trong 1 tuần
-    - Toàn bộ nội dung bằng tiếng Việt
+    Lấy must_have_skills từ analyze_position_task.
+    Lấy technical_skills từ read_cv_task.
+
+    Với TỪNG skill trong must_have_skills, thực hiện phân loại:
+
+    A) Skill dạng "A hoặc B hoặc C":
+       - Kiểm tra từng option: CV có chứa ÍT NHẤT 1 option không?
+       - Có ít nhất 1 → trạng thái: COVERED
+       - Không có option nào → trạng thái: MISSING
+
+    B) Skill đơn:
+       - Skill xuất hiện rõ ràng trong CV → trạng thái: COVERED
+       - Skill có liên quan gián tiếp (ví dụ: CV ghi "Packet Tracer"
+         khi yêu cầu "Cisco") → trạng thái: PARTIAL (ghi rõ lý do)
+       - Skill không có trong CV → trạng thái: MISSING
+
+    Tạo 3 danh sách trung gian:
+    - covered_skills: skills COVERED + PARTIAL
+    - missing_must_have: skills MISSING → đây là missingSkills trong output
+    - needs_highlight: skills PARTIAL — có nhưng chưa ghi rõ trong CV
+
+    Sau đó đếm:
+    - dealbreaker_missing_count = số dealbreakers nằm trong missing_must_have
+
+    ## BƯỚC 3 — TÍNH ĐIỂM
+
+    coverage_rate = len(covered_skills) / len(must_have_skills)
+
+    Nếu detected_level là intern hoặc fresher:
+      >= 0.85 → base_score = 85-100
+      >= 0.65 → base_score = 65-84
+      >= 0.45 → base_score = 45-64
+      <  0.45 → base_score = 0-44
+
+    Nếu detected_level là junior:
+      >= 0.80 → base_score = 80-100
+      >= 0.60 → base_score = 60-79
+      >= 0.40 → base_score = 40-59
+      <  0.40 → base_score = 0-39
+
+    Điều chỉnh:
+      - Mỗi dealbreaker trong missing_must_have: -10 điểm
+      - inferred_level (CV) cao hơn detected_level (vị trí apply): +5 điểm
+      - Clamp kết quả trong khoảng 0-100
+
+    overallScore = giá trị cụ thể sau điều chỉnh
+
+    ## BƯỚC 4 — TẠO GỢI Ý CỤ THỂ
+
+    improvements (tối đa 5, theo thứ tự ưu tiên):
+    1. Dealbreaker skills trong missing_must_have (priority: high)
+       issue: "CV không có [tên skill] — đây là kỹ năng cốt lõi của vị trí [tên vị trí]"
+       suggestion: "Bổ sung kinh nghiệm/project sử dụng [skill] vào mục [section phù hợp]"
+    2. Các missing_must_have còn lại (priority: high hoặc medium)
+       suggestion: dẫn chiếu đúng section (Skills/Projects/Experience)
+    3. needs_highlight skills (priority: medium)
+       issue: "CV có liên quan đến [skill] qua [bằng chứng] nhưng chưa ghi rõ tên"
+       suggestion: "Ghi rõ '[tên skill chuẩn]' trong mục Skills"
+    4. Format/trình bày nếu còn slot (priority: low)
+    NGHIÊM CẤM: improvement chung chung không có tên skill/section cụ thể
+
+    missingSkills:
+    - Chỉ từ missing_must_have
+    - Skill dạng "A hoặc B": giữ nguyên dạng "A hoặc B"
+    - Tên ngắn, KHÔNG có prefix [CORE]/[JUNIOR]
+    - KHÔNG đưa bonus_skills hay [PLUS] vào
+
+    strongPoints (chỉ kỹ thuật, có bằng chứng):
+    - Lấy từ covered_skills và strengths trong read_cv_task
+    - Ví dụ tốt: "Có kinh nghiệm cấu hình OSPF qua dự án X"
+    - NGHIÊM CẤM: "Kỹ năng làm việc nhóm", "Chăm chỉ", "Ham học hỏi"
+    - Nếu không có điểm mạnh kỹ thuật rõ ràng: trả về []
+
+    quickWins (đúng 3, PHÂN BIỆT bắt buộc):
+    - Ưu tiên lấy từ dealbreakers và missing_must_have
+    - Skill trong needs_highlight:
+      → "Bổ sung '[tên skill chuẩn]' vào mục Skills trong CV"
+    - Skill trong missing_must_have mà ứng viên có thể biết rồi
+      (liên quan gián tiếp đến skills có trong CV):
+      → "Kiểm tra lại CV — nếu đã biết [skill], hãy ghi rõ vào mục Skills"
+    - Skill thực sự chưa có:
+      → "Học [skill] qua [tên cụ thể: tên course/lab/project thực tế]
+         Ví dụ: 'Học BGP qua GNS3 lab hoặc khóa CCNP ENARSI trên Udemy'"
+    NGHIÊM CẤM: "Tìm dự án mạng", "Tham gia khóa học trực tuyến" (không có tên cụ thể),
+    "Tạo blog", "Tìm kiếm cơ hội" — những gợi ý này vô nghĩa.
+
+    ## BƯỚC 5 — OUTPUT JSON
+
+    Chỉ trả về JSON hợp lệ, KHÔNG có text bên ngoài,
+    KHÔNG có markdown code block (không có backtick json).
+
+    {
+      "overallScore": <số 0-100>,
+      "summary": "<2-3 câu tiếng Việt: nêu coverage rate, điểm mạnh cụ thể, gap cụ thể nhất>",
+      "improvements": [
+        {
+          "section": "<Summary|Skills|Experience|Projects|Education>",
+          "issue": "<vấn đề cụ thể — tên skill và section thực tế>",
+          "suggestion": "<hành động cụ thể — tên skill và section đích>",
+          "priority": "<high|medium|low>"
+        }
+      ],
+      "missingSkills": ["<tên skill ngắn từ missing_must_have>"],
+      "strongPoints": ["<điểm mạnh kỹ thuật có bằng chứng từ CV, hoặc list rỗng>"],
+      "quickWins": [
+        "<việc 1: có tên skill/tool/course cụ thể>",
+        "<việc 2>",
+        "<việc 3>"
+      ]
+    }
+
   expected_output: >
-    JSON hợp lệ với đầy đủ: overallScore, summary, improvements,
-    missingSkills, strongPoints, quickWins
+    JSON hợp lệ với: overallScore (0-100), summary (2-3 câu có số liệu/skill cụ thể),
+    improvements (tối đa 5, mỗi cái dẫn chiếu skill thực tế),
+    missingSkills (chỉ từ missing_must_have),
+    strongPoints (chỉ kỹ thuật có bằng chứng, hoặc []),
+    quickWins (đúng 3, phân biệt highlight vs học mới, có tên cụ thể).

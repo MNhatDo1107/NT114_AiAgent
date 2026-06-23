@@ -384,7 +384,7 @@ async def scrape_jd(request: ScrapeRequest):
     loop = asyncio.get_running_loop()
     try:
         text = await loop.run_in_executor(executor, _do_scrape, request.url)
-        return {"text": text[:MAX_JD_SCRAPE]}
+        return {"jd_text": text[:MAX_JD_SCRAPE]}
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     
